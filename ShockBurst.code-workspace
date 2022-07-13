@@ -1,0 +1,28 @@
+{
+	"folders": [
+    {
+      "name": "ESB_prx",
+      "path": "ESB_prx"
+    },
+    {
+      "path": "ESB_ptx"
+    },
+    {
+      "path": "boards"
+    }
+  ],
+  "settings": {
+    "nrf-connect.applications": [
+      "${workspaceFolder}",
+      "${workspaceFolder:ESB_ptx}"
+    ],
+    "nrf-connect.toolchain.path": "${nrf-connect.toolchain:2.0.0}",
+    "nrf-connect.topdir": "/opt/nordic/ncs/v2.0.0",
+    "nrf-connect.boardRoots": [
+      "/Users/jan/Documents/Freiberuf/Kunden/Selbst/ShockBurst/"
+    ],
+    "files.associations": {
+      "nrfx_gpiote.h": "c"
+    }
+  }
+}
