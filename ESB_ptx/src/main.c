@@ -35,7 +35,7 @@ static struct gpio_callback button_cb_data;
 static bool ready = true;
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
-	0x01, 0x00, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08);
+	0x01, 0x00);
 
 #define _RADIO_SHORTS_COMMON                                                   \
 	(RADIO_SHORTS_READY_START_Msk | RADIO_SHORTS_END_DISABLE_Msk |         \
@@ -56,13 +56,9 @@ void event_handler(struct esb_evt const *event)
 	case ESB_EVENT_RX_RECEIVED:
 		while (esb_read_rx_payload(&rx_payload) == 0) {
 			LOG_DBG("Packet received, len %d : "
-				"0x%02x, 0x%02x, 0x%02x, 0x%02x, "
-				"0x%02x, 0x%02x, 0x%02x, 0x%02x",
+				"0x%02x, 0x%02x",
 				rx_payload.length, rx_payload.data[0],
-				rx_payload.data[1], rx_payload.data[2],
-				rx_payload.data[3], rx_payload.data[4],
-				rx_payload.data[5], rx_payload.data[6],
-				rx_payload.data[7]);
+				rx_payload.data[1]);
 		}
 		break;
 	}
@@ -107,9 +103,9 @@ int esb_initialize(void)
 	/* These are arbitrary default addresses. In end user products
 	 * different addresses should be used for each set of devices.
 	 */
-	uint8_t base_addr_0[4] = {0xE7, 0xE7, 0xE7, 0xE7};
-	uint8_t base_addr_1[4] = {0xC2, 0xC2, 0xC2, 0xC2};
-	uint8_t addr_prefix[8] = {0xE7, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8};
+	uint8_t base_addr_0[4] = {0xE2, 0xE5, 0xEA, 0xE3};
+	uint8_t base_addr_1[4] = {0xC5, 0xC1, 0xCA, 0xC3};
+	uint8_t addr_prefix[8] = {0xEA, 0xCA, 0xC4, 0xC2, 0xC7, 0xB1, 0xC3, 0xC1};
 
 	struct esb_config config = ESB_DEFAULT_CONFIG;
 
@@ -200,7 +196,7 @@ static int button_initialize(gpio_callback_handler_t button_pressed_cb) {
 	gpio_add_callback(button.port, &button_cb_data);
 	LOG_INF("Initialized on port %s, pin %d", button.port->name, button.pin);
 
-    return ret;
+  return ret;
 }
 
 void main(void)

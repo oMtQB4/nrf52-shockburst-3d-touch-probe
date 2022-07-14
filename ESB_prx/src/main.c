@@ -19,19 +19,11 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(esb_prx, CONFIG_ESB_PRX_APP_LOG_LEVEL);
 
-// static const struct gpio_dt_spec leds[] = {
-// 	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
-// 	GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
-// 	GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
-// 	GPIO_DT_SPEC_GET(DT_ALIAS(led3), gpios),
-// };
-
-
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
-	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17);
+	0x10, 0x11);
 
 static bool rx_received = false;
 
@@ -65,24 +57,6 @@ static void led_update(bool value)
   LOG_INF("LED %d set to %d.", led.pin, value);
 }
 
-// static void leds_update(uint8_t value)
-// {
-	// bool led0_status = !(value % 8 > 0 && value % 8 <= 4);
-	// bool led1_status = !(value % 8 > 1 && value % 8 <= 5);
-	// bool led2_status = !(value % 8 > 2 && value % 8 <= 6);
-	// bool led3_status = !(value % 8 > 3);
-
-	// gpio_port_pins_t mask = BIT(leds[0].pin) | BIT(leds[1].pin) |
-	// 			BIT(leds[2].pin) | BIT(leds[3].pin);
-
-	// gpio_port_value_t val = led0_status << leds[0].pin |
-	// 			led1_status << leds[1].pin |
-	// 			led2_status << leds[2].pin |
-	// 			led3_status << leds[3].pin;
-
-	// gpio_port_set_masked_raw(leds[0].port, mask, val);
-// }
-
 void event_handler(struct esb_evt const *event)
 {
 	switch (event->evt_id) {
@@ -95,13 +69,9 @@ void event_handler(struct esb_evt const *event)
 	case ESB_EVENT_RX_RECEIVED:
 		if (esb_read_rx_payload(&rx_payload) == 0) {
 			LOG_INF("Packet received, len %d : "
-				"0x%02x, 0x%02x, 0x%02x, 0x%02x, "
-				"0x%02x, 0x%02x, 0x%02x, 0x%02x",
+				"0x%02x, 0x%02x",
 				rx_payload.length, rx_payload.data[0],
-				rx_payload.data[1], rx_payload.data[2],
-				rx_payload.data[3], rx_payload.data[4],
-				rx_payload.data[5], rx_payload.data[6],
-				rx_payload.data[7]);
+				rx_payload.data[1]);
 
       rx_received = true;
 		} else {
@@ -150,9 +120,9 @@ int esb_initialize(void)
 	/* These are arbitrary default addresses. In end user products
 	 * different addresses should be used for each set of devices.
 	 */
-	uint8_t base_addr_0[4] = {0xE7, 0xE7, 0xE7, 0xE7};
-	uint8_t base_addr_1[4] = {0xC2, 0xC2, 0xC2, 0xC2};
-	uint8_t addr_prefix[8] = {0xE7, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8};
+  uint8_t base_addr_0[4] = {0xE2, 0xE5, 0xEA, 0xE3};
+	uint8_t base_addr_1[4] = {0xC5, 0xC1, 0xCA, 0xC3};
+	uint8_t addr_prefix[8] = {0xEA, 0xCA, 0xC4, 0xC2, 0xC7, 0xB1, 0xC3, 0xC1};
 
 	struct esb_config config = ESB_DEFAULT_CONFIG;
 
@@ -185,12 +155,23 @@ int esb_initialize(void)
 	return 0;
 }
 
+static bool led_state = false;
 
 static void recheck_timer_expired(struct k_timer *timer_id) {
-  led_update(true);
+  led_state = true;
+  led_update(led_state);
+
+  // TODO reset export pin
 }
 K_TIMER_DEFINE(recheck_timer, recheck_timer_expired, NULL);
 
+static void activity_timer_expired(struct k_timer *timer_id) {
+  led_state = !led_state;
+  led_update(led_state);
+  k_timer_start(timer_id, (led_state ? K_MSEC(5000) : K_MSEC(100)), K_NO_WAIT);
+  LOG_INF("Timer expired");
+}
+K_TIMER_DEFINE(activity_timer, activity_timer_expired, NULL);
 
 void main(void)
 {
@@ -207,10 +188,6 @@ void main(void)
 	if (err) {
 		return;
 	}
-
-  led_update(false);
-  k_sleep(K_MSEC(1000));
-  led_update(true);
 
 	err = esb_initialize();
 	if (err) {
@@ -234,12 +211,17 @@ void main(void)
 		return;
 	}
 
-  led_update(true);
+  led_state = true;
+  led_update(led_state);
+
+  k_timer_start(&activity_timer, K_MSEC(5000), K_NO_WAIT);
 
   while(true) {
     if (rx_received) {
-      led_update(false);
-      k_timer_stop(&recheck_timer);
+      // TODO set export pin
+
+      led_state = false;
+      led_update(led_state);
       k_timer_start(&recheck_timer, K_MSEC(50), K_NO_WAIT);
 
       rx_received = false;
