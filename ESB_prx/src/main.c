@@ -21,33 +21,30 @@ LOG_MODULE_REGISTER(esb_prx, CONFIG_ESB_PRX_APP_LOG_LEVEL);
 
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
+static const struct gpio_dt_spec status = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
+
+#define STATUS_ACTIVE     (true)
+#define STATUS_INACTIVE   (false)
+
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
 	0x10, 0x11);
 
 static bool rx_received = false;
 
-static int leds_init(void)
-{
-	if (!device_is_ready(led.port)) {
-		LOG_ERR("LEDs port not ready");
-		return -ENODEV;
-	}
 
-  int err = gpio_pin_configure_dt(&led, GPIO_OUTPUT);
+static void status_update(bool value) {
+  gpio_port_pins_t mask = BIT(status.pin);
 
-  if (err) {
-    LOG_ERR("Unable to configure LED, err %d.", err);
-    return err;
-  }
+	gpio_port_value_t val = value << status.pin;
 
-	return 0;
+	(void)gpio_port_set_masked_raw(status.port, mask, val);
+
+  LOG_INF("STATUS %d set to %d.", status.pin, value);
 }
 
 static void led_update(bool value)
 {
-	//bool led0_status = value % 2 == 0;
-	
 	gpio_port_pins_t mask = BIT(led.pin);
 
 	gpio_port_value_t val = value << led.pin;
@@ -55,6 +52,30 @@ static void led_update(bool value)
 	(void)gpio_port_set_masked_raw(led.port, mask, val);
 
   LOG_INF("LED %d set to %d.", led.pin, value);
+}
+
+static int gpios_init(void)
+{
+	if (!device_is_ready(led.port) || !device_is_ready(status.port)) {
+		LOG_ERR("LED or status port not ready");
+		return -ENODEV;
+	}
+
+  int err = gpio_pin_configure_dt(&led, GPIO_OUTPUT);
+  if (err) {
+    LOG_ERR("Unable to configure LED gpio, err %d.", err);
+    return err;
+  }
+  led_update(true);
+
+  err = gpio_pin_configure_dt(&status, GPIO_OUTPUT);
+  if (err) {
+    LOG_ERR("Unable to configure STATUS gpio, err %d.", err);
+    return err;
+  }
+  status_update(STATUS_INACTIVE);
+
+	return 0;
 }
 
 void event_handler(struct esb_evt const *event)
@@ -158,10 +179,10 @@ int esb_initialize(void)
 static bool led_state = false;
 
 static void recheck_timer_expired(struct k_timer *timer_id) {
+  status_update(STATUS_INACTIVE);
+
   led_state = true;
   led_update(led_state);
-
-  // TODO reset export pin
 }
 K_TIMER_DEFINE(recheck_timer, recheck_timer_expired, NULL);
 
@@ -184,7 +205,7 @@ void main(void)
 		return;
 	}
 
-	err = leds_init();
+	err = gpios_init();
 	if (err) {
 		return;
 	}
@@ -212,13 +233,12 @@ void main(void)
 	}
 
   led_state = true;
-  led_update(led_state);
 
   k_timer_start(&activity_timer, K_MSEC(5000), K_NO_WAIT);
 
   while(true) {
     if (rx_received) {
-      // TODO set export pin
+      status_update(STATUS_ACTIVE);
 
       led_state = false;
       led_update(led_state);
