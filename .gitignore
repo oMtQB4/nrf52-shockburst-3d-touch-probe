@@ -165,4 +165,4 @@ fabric.properties
 # End of https://www.toptal.com/developers/gitignore/api/c,c++,clion+allB
 
 build
-build_1
+build_*

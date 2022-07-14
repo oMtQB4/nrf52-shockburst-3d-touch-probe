@@ -26,6 +26,8 @@ LOG_MODULE_REGISTER(esb_ptx, CONFIG_ESB_PTX_APP_LOG_LEVEL);
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
+
+
 static bool btn_prs = false;
 static struct gpio_callback button_cb_data;
 
@@ -145,10 +147,6 @@ int esb_initialize(void)
 
 static int led_init(void)
 {
-  // nrfx_gpiote_out_config_t config = NRFX_GPIOTE_CONFIG_OUT_SIMPLE(true);
-
-  // nrfx_gpiote_out_init(NRF_GPIO_PIN_MAP(0, ), &config);
-
 	if (!device_is_ready(led.port)) {
 		LOG_ERR("LEDs port not ready");
 		return -ENODEV;
@@ -164,21 +162,21 @@ static int led_init(void)
 	return 0;
 }
 
-static void led_update(uint8_t value)
+static void led_update(bool value)
 {
-	bool led0_status = value % 2 == 0;
+	//bool led0_status = value % 2 == 0;
 	
 	gpio_port_pins_t mask = BIT(led.pin);
 
-	gpio_port_value_t val = led0_status << led.pin;
+	gpio_port_value_t val = value << led.pin;
 
 	(void)gpio_port_set_masked_raw(led.port, mask, val);
 }
 
-static void button_pressed(const struct device *dev, struct gpio_callback *cb,
-		    uint32_t pins) {
-    btn_prs = gpio_pin_get(button.port, button.pin) == 1;
-    LOG_INF("Button pressed (%d) at %" PRIu32, btn_prs, k_cycle_get_32());
+static void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+  btn_prs = gpio_pin_get(button.port, button.pin) == 1;
+
+  LOG_INF("Button pressed: %d", btn_prs);
 }
 
 static int button_initialize(gpio_callback_handler_t button_pressed_cb) {
@@ -239,8 +237,7 @@ void main(void)
 	tx_payload.noack = false;
 	while (1) {
 		if (btn_prs) {
-			esb_flush_tx();
-			led_update(tx_payload.data[1]);
+      esb_flush_tx();
 
 			err = esb_write_payload(&tx_payload);
 			if (err) {
@@ -248,8 +245,10 @@ void main(void)
 			}
 			tx_payload.data[1]++;
 
-      k_sleep(K_MSEC(50));
+      k_sleep(K_MSEC(10));
 		}
+
+  	led_update(!btn_prs);
 
     if (LOG_PROCESS() == false) {
 			pm_state_set(PM_STATE_RUNTIME_IDLE, 0);

@@ -15,63 +15,73 @@
 #include <zephyr/kernel.h>
 #include <zephyr/types.h>
 
+#include <logging/log_ctrl.h>
+#include <logging/log.h>
 LOG_MODULE_REGISTER(esb_prx, CONFIG_ESB_PRX_APP_LOG_LEVEL);
 
-static const struct gpio_dt_spec leds[] = {
-	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
-	GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
-	GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
-	GPIO_DT_SPEC_GET(DT_ALIAS(led3), gpios),
-};
+// static const struct gpio_dt_spec leds[] = {
+// 	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
+// 	GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
+// 	GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
+// 	GPIO_DT_SPEC_GET(DT_ALIAS(led3), gpios),
+// };
 
-BUILD_ASSERT(DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
-			  DT_GPIO_CTLR(DT_ALIAS(led1), gpios)) &&
-	     DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
-			  DT_GPIO_CTLR(DT_ALIAS(led2), gpios)) &&
-	     DT_SAME_NODE(DT_GPIO_CTLR(DT_ALIAS(led0), gpios),
-			  DT_GPIO_CTLR(DT_ALIAS(led3), gpios)),
-	     "All LEDs must be on the same port");
+
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
 	0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17);
 
+static bool rx_received = false;
+
 static int leds_init(void)
 {
-	if (!device_is_ready(leds[0].port)) {
+	if (!device_is_ready(led.port)) {
 		LOG_ERR("LEDs port not ready");
 		return -ENODEV;
 	}
 
-	for (size_t i = 0; i < ARRAY_SIZE(leds); i++) {
-		int err = gpio_pin_configure_dt(&leds[i], GPIO_OUTPUT);
+  int err = gpio_pin_configure_dt(&led, GPIO_OUTPUT);
 
-		if (err) {
-			LOG_ERR("Unable to configure LED%u, err %d.", i, err);
-			return err;
-		}
-	}
+  if (err) {
+    LOG_ERR("Unable to configure LED, err %d.", err);
+    return err;
+  }
 
 	return 0;
 }
 
-static void leds_update(uint8_t value)
+static void led_update(bool value)
 {
-	bool led0_status = !(value % 8 > 0 && value % 8 <= 4);
-	bool led1_status = !(value % 8 > 1 && value % 8 <= 5);
-	bool led2_status = !(value % 8 > 2 && value % 8 <= 6);
-	bool led3_status = !(value % 8 > 3);
+	//bool led0_status = value % 2 == 0;
+	
+	gpio_port_pins_t mask = BIT(led.pin);
 
-	gpio_port_pins_t mask = BIT(leds[0].pin) | BIT(leds[1].pin) |
-				BIT(leds[2].pin) | BIT(leds[3].pin);
+	gpio_port_value_t val = value << led.pin;
 
-	gpio_port_value_t val = led0_status << leds[0].pin |
-				led1_status << leds[1].pin |
-				led2_status << leds[2].pin |
-				led3_status << leds[3].pin;
+	(void)gpio_port_set_masked_raw(led.port, mask, val);
 
-	gpio_port_set_masked_raw(leds[0].port, mask, val);
+  LOG_INF("LED %d set to %d.", led.pin, value);
 }
+
+// static void leds_update(uint8_t value)
+// {
+	// bool led0_status = !(value % 8 > 0 && value % 8 <= 4);
+	// bool led1_status = !(value % 8 > 1 && value % 8 <= 5);
+	// bool led2_status = !(value % 8 > 2 && value % 8 <= 6);
+	// bool led3_status = !(value % 8 > 3);
+
+	// gpio_port_pins_t mask = BIT(leds[0].pin) | BIT(leds[1].pin) |
+	// 			BIT(leds[2].pin) | BIT(leds[3].pin);
+
+	// gpio_port_value_t val = led0_status << leds[0].pin |
+	// 			led1_status << leds[1].pin |
+	// 			led2_status << leds[2].pin |
+	// 			led3_status << leds[3].pin;
+
+	// gpio_port_set_masked_raw(leds[0].port, mask, val);
+// }
 
 void event_handler(struct esb_evt const *event)
 {
@@ -84,7 +94,7 @@ void event_handler(struct esb_evt const *event)
 		break;
 	case ESB_EVENT_RX_RECEIVED:
 		if (esb_read_rx_payload(&rx_payload) == 0) {
-			LOG_DBG("Packet received, len %d : "
+			LOG_INF("Packet received, len %d : "
 				"0x%02x, 0x%02x, 0x%02x, 0x%02x, "
 				"0x%02x, 0x%02x, 0x%02x, 0x%02x",
 				rx_payload.length, rx_payload.data[0],
@@ -93,7 +103,7 @@ void event_handler(struct esb_evt const *event)
 				rx_payload.data[5], rx_payload.data[6],
 				rx_payload.data[7]);
 
-			leds_update(rx_payload.data[1]);
+      rx_received = true;
 		} else {
 			LOG_ERR("Error while reading rx packet");
 		}
@@ -175,6 +185,13 @@ int esb_initialize(void)
 	return 0;
 }
 
+
+static void recheck_timer_expired(struct k_timer *timer_id) {
+  led_update(true);
+}
+K_TIMER_DEFINE(recheck_timer, recheck_timer_expired, NULL);
+
+
 void main(void)
 {
 	int err;
@@ -190,6 +207,10 @@ void main(void)
 	if (err) {
 		return;
 	}
+
+  led_update(false);
+  k_sleep(K_MSEC(1000));
+  led_update(true);
 
 	err = esb_initialize();
 	if (err) {
@@ -212,6 +233,23 @@ void main(void)
 		LOG_ERR("RX setup failed, err %d", err);
 		return;
 	}
+
+  led_update(true);
+
+  while(true) {
+    if (rx_received) {
+      led_update(false);
+      k_timer_stop(&recheck_timer);
+      k_timer_start(&recheck_timer, K_MSEC(50), K_NO_WAIT);
+
+      rx_received = false;
+    }
+
+    if (LOG_PROCESS() == false) {
+			//pm_state_set(PM_STATE_RUNTIME_IDLE, 0);
+      k_sleep(K_MSEC(1));
+		}
+  }
 
 	/* return to idle thread */
 	return;
