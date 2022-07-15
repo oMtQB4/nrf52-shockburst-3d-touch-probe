@@ -28,9 +28,17 @@ static const struct gpio_dt_spec status = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios
 
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
-	0x10, 0x11);
+	0x10, 0x00);
 
 static bool rx_received = false;
+
+typedef enum {
+  ALIVE_PKT_IDLE = 0,
+  ALIVE_PKT_SEND = 1,
+  ALIVE_PKT_HAS_SENT = 2,
+  ALIVE_PKT_RECEIVED = 3
+} alive_pkt_t;
+static alive_pkt_t alive_pkt = ALIVE_PKT_IDLE;
 
 
 static void status_update(bool value) {
@@ -89,12 +97,20 @@ void event_handler(struct esb_evt const *event)
 		break;
 	case ESB_EVENT_RX_RECEIVED:
 		if (esb_read_rx_payload(&rx_payload) == 0) {
-			LOG_INF("Packet received, len %d : "
-				"0x%02x, 0x%02x",
+			LOG_INF("Packet received (rssi %d), len %d : "
+				"0x%02x, 0x%02x", rx_payload.rssi,
 				rx_payload.length, rx_payload.data[0],
 				rx_payload.data[1]);
 
-      rx_received = true;
+        if (rx_payload.data[0] == 0x01) {
+          rx_received = true;
+        } else {
+          if (alive_pkt == ALIVE_PKT_HAS_SENT) {
+            alive_pkt = ALIVE_PKT_RECEIVED;
+          } else {
+            LOG_ERR("Unexpected alive packet received.");
+          }
+        }
 		} else {
 			LOG_ERR("Error while reading rx packet");
 		}
@@ -151,7 +167,8 @@ int esb_initialize(void)
 	config.bitrate = ESB_BITRATE_2MBPS;
 	config.mode = ESB_MODE_PRX;
 	config.event_handler = event_handler;
-	config.selective_auto_ack = true;
+	//config.selective_auto_ack = true;
+  config.selective_auto_ack = false;
 
 	err = esb_init(&config);
 	if (err) {
@@ -190,6 +207,9 @@ static void activity_timer_expired(struct k_timer *timer_id) {
   led_state = !led_state;
   led_update(led_state);
   k_timer_start(timer_id, (led_state ? K_MSEC(5000) : K_MSEC(100)), K_NO_WAIT);
+  
+  alive_pkt = ALIVE_PKT_SEND;
+
   LOG_INF("Timer expired");
 }
 K_TIMER_DEFINE(activity_timer, activity_timer_expired, NULL);
@@ -218,12 +238,6 @@ void main(void)
 
 	LOG_INF("Initialization complete");
 
-	err = esb_write_payload(&tx_payload);
-	if (err) {
-		LOG_ERR("Write payload, err %d", err);
-		return;
-	}
-
 	LOG_INF("Setting up for packet receiption");
 
 	err = esb_start_rx();
@@ -236,8 +250,25 @@ void main(void)
 
   k_timer_start(&activity_timer, K_MSEC(5000), K_NO_WAIT);
 
+  tx_payload.noack = false;
   while(true) {
-    if (rx_received) {
+    if (!rx_received) {
+      if (alive_pkt == ALIVE_PKT_SEND) {
+        esb_flush_tx();
+
+        err = esb_write_payload(&tx_payload);
+        if (err) {
+          LOG_ERR("Payload write failed, err %d", err);
+        }
+        tx_payload.data[1]++;
+
+        LOG_INF("Alive packet has been sent");
+        alive_pkt = ALIVE_PKT_HAS_SENT;
+      } else if (alive_pkt == ALIVE_PKT_RECEIVED) {
+        LOG_INF("Alive packet has been received");
+        alive_pkt = ALIVE_PKT_IDLE;
+      }
+    } else {
       status_update(STATUS_ACTIVE);
 
       led_state = false;

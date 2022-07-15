@@ -28,14 +28,19 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 
 
-static bool btn_prs = false;
+static volatile bool btn_prs = false;
 static struct gpio_callback button_cb_data;
+
+static volatile bool send_alive_packet = false;
 
 
 static bool ready = true;
 static struct esb_payload rx_payload;
 static struct esb_payload tx_payload = ESB_CREATE_PAYLOAD(0,
 	0x01, 0x00);
+
+static struct esb_payload tx_payload_alive = ESB_CREATE_PAYLOAD(0,
+	0x02, 0x00);
 
 #define _RADIO_SHORTS_COMMON                                                   \
 	(RADIO_SHORTS_READY_START_Msk | RADIO_SHORTS_END_DISABLE_Msk |         \
@@ -59,6 +64,12 @@ void event_handler(struct esb_evt const *event)
 				"0x%02x, 0x%02x",
 				rx_payload.length, rx_payload.data[0],
 				rx_payload.data[1]);
+
+      if (rx_payload.data[0] == 0x10) {
+        LOG_INF("Alive packet received.");
+        send_alive_packet = true;
+        tx_payload_alive.data[1] = rx_payload.data[1];
+      }
 		}
 		break;
 	}
@@ -114,7 +125,8 @@ int esb_initialize(void)
 	config.bitrate = ESB_BITRATE_2MBPS;
 	config.event_handler = event_handler;
 	config.mode = ESB_MODE_PTX;
-	config.selective_auto_ack = true;
+	//config.selective_auto_ack = true;
+  config.selective_auto_ack = false;
   config.tx_output_power = ESB_TX_POWER_4DBM;
 
 	err = esb_init(&config);
@@ -231,6 +243,7 @@ void main(void)
 	LOG_INF("Initialization complete. Starting main loop");
 
 	tx_payload.noack = false;
+  tx_payload_alive.noack = false;
 	while (1) {
 		if (btn_prs) {
       esb_flush_tx();
@@ -242,12 +255,21 @@ void main(void)
 			tx_payload.data[1]++;
 
       k_sleep(K_MSEC(10));
-		}
+		} else if (send_alive_packet) {
+      esb_flush_tx();
+
+			err = esb_write_payload(&tx_payload_alive);
+			if (err) {
+				LOG_ERR("Payload write failed, err %d", err);
+			}
+      send_alive_packet = false;
+    }
 
   	led_update(!btn_prs);
 
     if (LOG_PROCESS() == false) {
-			pm_state_set(PM_STATE_RUNTIME_IDLE, 0);
+      k_sleep(K_MSEC(1));
+			//pm_state_set(PM_STATE_RUNTIME_IDLE, 0);
 		}
 		//k_sleep(K_MSEC(100));
 	}
