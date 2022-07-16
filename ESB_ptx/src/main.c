@@ -15,8 +15,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/types.h>
 
-// #include <nrfx_gpiote.h>
-
 #include <pm/pm.h>
 
 #include <logging/log_ctrl.h>
@@ -27,8 +25,7 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 
-
-static bool btn_prs = false;
+static volatile bool button_pressed = false;
 static struct gpio_callback button_cb_data;
 
 
@@ -160,8 +157,6 @@ static int led_init(void)
 
 static void led_update(bool value)
 {
-	//bool led0_status = value % 2 == 0;
-	
 	gpio_port_pins_t mask = BIT(led.pin);
 
 	gpio_port_value_t val = value << led.pin;
@@ -169,19 +164,21 @@ static void led_update(bool value)
 	(void)gpio_port_set_masked_raw(led.port, mask, val);
 }
 
-static void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-  btn_prs = gpio_pin_get(button.port, button.pin) == 1;
+static void button_pressed_cb(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+  button_pressed = gpio_pin_get(button.port, button.pin) == 1;
 
-  LOG_INF("Button pressed: %d", btn_prs);
+  LOG_INF("Button pressed: %d", button_pressed);
 }
 
-static int button_initialize(gpio_callback_handler_t button_pressed_cb) {
+static int button_initialize(gpio_callback_handler_t btn_prs_cb) {
   int ret;
 	if (!device_is_ready(button.port)) {
 		LOG_ERR("Error: button device %s is not ready", button.port->name);
 		return -1;
 	}
-    ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+  
+  ret = gpio_pin_configure(button.port, button.pin, GPIO_INPUT);
+  //ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
 	if (ret != 0) {
 		LOG_ERR("Error %d: failed to configure %s pin %d", ret, button.port->name, button.pin);
 		return ret;
@@ -192,7 +189,7 @@ static int button_initialize(gpio_callback_handler_t button_pressed_cb) {
 		return ret;
 	}
 
-	gpio_init_callback(&button_cb_data, button_pressed_cb, BIT(button.pin));
+	gpio_init_callback(&button_cb_data, btn_prs_cb, BIT(button.pin));
 	gpio_add_callback(button.port, &button_cb_data);
 	LOG_INF("Initialized on port %s, pin %d", button.port->name, button.pin);
 
@@ -210,14 +207,12 @@ void main(void)
 		return;
 	}
 
-  // nrfx_gpiote_init(5);
-
 	err = led_init();
 	if (err) {
 		return;
 	}
 
-  err = button_initialize(button_pressed);
+  err = button_initialize(button_pressed_cb);
   if (err) {
     return;
   }
@@ -232,7 +227,7 @@ void main(void)
 
 	tx_payload.noack = false;
 	while (1) {
-		if (btn_prs) {
+		if (button_pressed) {
       esb_flush_tx();
 
 			err = esb_write_payload(&tx_payload);
@@ -244,11 +239,10 @@ void main(void)
       k_sleep(K_MSEC(10));
 		}
 
-  	led_update(!btn_prs);
+  	led_update(!button_pressed);
 
     if (LOG_PROCESS() == false) {
 			pm_state_set(PM_STATE_RUNTIME_IDLE, 0);
 		}
-		//k_sleep(K_MSEC(100));
 	}
 }

@@ -23,6 +23,7 @@ static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
 static const struct gpio_dt_spec status = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 
+// TODO switch active and inactive state
 #define STATUS_ACTIVE     (true)
 #define STATUS_INACTIVE   (false)
 
@@ -248,7 +249,6 @@ void main(void)
     }
 
     if (LOG_PROCESS() == false) {
-			//pm_state_set(PM_STATE_RUNTIME_IDLE, 0);
       k_sleep(K_MSEC(1));
 		}
   }

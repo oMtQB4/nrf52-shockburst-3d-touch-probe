@@ -6,7 +6,4 @@ if BOARD_SHOCKBURST_PROBE
 config BOARD
 	default "shockburst_probe"
 
-config BT_CTLR
-   default BT
-
 endif

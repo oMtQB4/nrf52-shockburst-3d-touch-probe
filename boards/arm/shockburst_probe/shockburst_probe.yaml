@@ -13,4 +13,5 @@ toolchain:
   - xtools
 supported:
   - gpio
-
+  - counter
+  

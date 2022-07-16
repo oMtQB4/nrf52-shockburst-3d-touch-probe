@@ -6,7 +6,7 @@
 
 / {
 	model = "ShockBurst_Probe";
-	compatible = "softwareentwicklung-dr-jan-roters,shockburst-probe";
+	compatible = "jan,shockburst-probe";
 
 	chosen {
 		zephyr,sram = &sram0;
@@ -14,16 +14,11 @@
 		zephyr,code-partition = &slot0_partition;
 	};
 
-  aliases {
-    led0 = &led0;
-    sw0 = &button0;
-  };
-
   leds {
       compatible = "gpio-leds";
       led0: led_0 {
-              gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
-              label = "Red LED";
+          gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
+              label = "Status LED";
       };
   };
 
@@ -34,6 +29,16 @@
               label = "Button";
       };
   };
+
+  aliases {
+    led0 = &led0;
+    sw0 = &button0;
+  };
+
+};
+
+&gpiote {
+	status = "okay";
 };
 
 &gpio0 {
